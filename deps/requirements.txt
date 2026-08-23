@@ -1,0 +1,5 @@
+liquidctl
+Pillow
+pyusb
+libusb-package
+pythonnet
