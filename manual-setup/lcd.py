@@ -1,6 +1,7 @@
 import subprocess
 import time
 import logging
+import ctypes
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -42,9 +43,27 @@ UPDATE_INTERVAL = 10
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_PATH = SCRIPT_DIR / "lcd_frame.png"
 LOG_PATH = SCRIPT_DIR / "log.txt"
+BOOT_MARKER_PATH = SCRIPT_DIR / "lcd_boot_marker.txt"
 LHM_DIR = SCRIPT_DIR / "deps" / "lhm"
+
+
+def reset_log_for_new_boot() -> bool:
+    """Return True once after each Windows boot, without resetting on task restarts."""
+    try:
+        get_tick_count = ctypes.windll.kernel32.GetTickCount64
+        get_tick_count.restype = ctypes.c_ulonglong
+        uptime_seconds = get_tick_count() / 1000
+        boot_marker = str(int((time.time() - uptime_seconds) // 60))
+        previous_marker = BOOT_MARKER_PATH.read_text(encoding="utf-8").strip() if BOOT_MARKER_PATH.exists() else ""
+        BOOT_MARKER_PATH.write_text(boot_marker, encoding="utf-8")
+        return boot_marker != previous_marker
+    except OSError:
+        return False
+
+
 logging.basicConfig(
     filename=LOG_PATH,
+    filemode="w" if reset_log_for_new_boot() else "a",
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
