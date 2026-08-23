@@ -7,6 +7,7 @@ Run ``python lcd.py --list-devices`` to discover devices, or use
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -49,6 +50,7 @@ CONFIG_PATH = DATA_DIR / "lcd_config.json"
 FAN_CONFIG_PATH = DATA_DIR / "fan_config.bat"
 OUTPUT_PATH = DATA_DIR / "lcd_frame.png"
 LOG_PATH = DATA_DIR / "lcd.log"
+BOOT_MARKER_PATH = DATA_DIR / "lcd_boot_marker.txt"
 
 DEFAULT_CONFIG = {
     # The defaults preserve the original Kraken Z53 behavior. setup.bat
@@ -80,10 +82,27 @@ DEFAULT_CONFIG = {
 }
 
 
+def reset_log_for_new_boot() -> bool:
+    """Return True once after each Windows boot, without resetting on task restarts."""
+    try:
+        get_tick_count = ctypes.windll.kernel32.GetTickCount64
+        get_tick_count.restype = ctypes.c_ulonglong
+        uptime_seconds = get_tick_count() / 1000
+        # Round to a minute so separate LCD launches during one boot agree.
+        boot_marker = str(int((time.time() - uptime_seconds) // 60))
+        previous_marker = BOOT_MARKER_PATH.read_text(encoding="utf-8").strip() if BOOT_MARKER_PATH.exists() else ""
+        BOOT_MARKER_PATH.write_text(boot_marker, encoding="utf-8")
+        return boot_marker != previous_marker
+    except OSError:
+        # If Windows cannot provide or save a marker, preserve the existing log.
+        return False
+
+
 def configure_logging(console: bool = True) -> None:
     handlers: list[logging.Handler] = [
         RotatingFileHandler(
             LOG_PATH,
+            mode="w" if reset_log_for_new_boot() else "a",
             maxBytes=512_000,
             backupCount=2,
             encoding="utf-8",
