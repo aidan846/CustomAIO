@@ -45,18 +45,25 @@ the cooler at a time.
 cargo dist
 ```
 
-One command: it builds in release mode, then assembles everything a user
-needs into `target\release\CustomAIO\` and zips it to
-`target\release\CustomAIO.zip` (about 0.5 MB), ready to attach to a GitHub
-release.
+or double-click `build.bat`, which does the same thing.
+
+Either one builds in release mode and then assembles everything a user needs
+into `target\release\CustomAIO\`, zipping it to `target\release\CustomAIO.zip`
+(about 0.5 MB), ready to attach to a GitHub release.
+
+**`cargo build --release` on its own is not enough** - it only produces
+`target\release\customaio.exe`, with no package folder and no zip.
 
 The package holds `customaio.exe`, `fan.bat`, `config.toml` (pristine defaults, not your local
 copy), `setup.bat`, `modules\`, README and LICENSE. It is self-contained:
 copy the folder anywhere, or unzip the archive, and run `setup.bat` as
 administrator.
 
-`cargo dist` is an alias defined in `.cargo\config.toml`; Cargo has no
-post-build hook, so packaging cannot be attached to a plain `cargo build`.
+`cargo dist` is an alias defined in `.cargo\config.toml`, and `build.bat` runs
+the same two steps. Cargo has no post-build hook and will not let an alias
+shadow `build`, so packaging genuinely cannot be attached to `cargo build`
+itself - it has to be a separate command.
+
 Note that `cargo clean` deletes everything under `target`, this package
 included, so move a release you want to keep out of there first.
 
@@ -129,6 +136,7 @@ customaio.exe    the whole program
 fan.bat          one-line `fan` alias, written by setup.bat
 config.toml      everything you can tune
 setup.bat        PATH, fan.bat, logon task, PawnIO check
+build.bat        build + package in one step (same as `cargo dist`)
 modules/         PawnIO blobs for CPU temperature
 data/            frame.png, customaio.log, profile.txt
 src/
