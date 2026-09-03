@@ -34,6 +34,21 @@ fan help
 Close NZXT CAM and the old Python service first - only one program can drive
 the cooler at a time.
 
+## Building a release
+
+```
+cargo build --release
+target\release\fan.exe package
+```
+
+That assembles `dist\CustomAIO\` - the executable, `config.toml` with
+pristine defaults, `setup.bat`, the PawnIO modules, README and LICENSE - and
+zips it to `dist\CustomAIO.zip`, ready to attach to a GitHub release. The
+folder is self-contained: unzip anywhere and run `setup.bat`.
+
+It writes to `dist\` rather than `target\` because `cargo clean` wipes
+`target`, which would delete a release you were about to upload.
+
 ## Where temperatures come from
 
 **CPU** - the [PawnIO](https://pawnio.eu) kernel driver reads the vendor's

@@ -31,6 +31,7 @@ fn main() -> std::process::ExitCode {
         "lcd" | "service" => service(rest),
         "preview" => preview(rest),
         "devices" | "list" => devices(),
+        "package" => package(),
         "help" | "-h" | "--help" => {
             help();
             Ok(())
@@ -167,6 +168,96 @@ fn preview(args: &[String]) -> Result<(), String> {
     render::write_png(pixmap, &out)?;
     println!("Style '{}' rendered to {}", cfg.style.name, out.display());
     Ok(())
+}
+
+/// Assemble everything a user needs to run CustomAIO into dist\CustomAIO,
+/// then zip it. The output folder is self-contained: unzip it anywhere and
+/// run setup.bat.
+///
+/// It lives in dist\ rather than target\ because `cargo clean` wipes target,
+/// which would silently delete a release you were about to upload.
+fn package() -> Result<(), String> {
+    let root = config::base_dir();
+    let out = root.join("dist").join("CustomAIO");
+    header("Building release package");
+
+    // Start clean, so a file removed from the project can't linger in a
+    // release from a previous run.
+    if out.exists() {
+        std::fs::remove_dir_all(&out).map_err(|e| format!("could not clear {}: {e}", out.display()))?;
+    }
+    std::fs::create_dir_all(out.join("modules"))
+        .map_err(|e| format!("could not create {}: {e}", out.display()))?;
+
+    // The running executable is the one that was just built, so copying it
+    // avoids guessing at debug vs release paths.
+    let exe = std::env::current_exe().map_err(|e| format!("could not locate fan.exe: {e}"))?;
+    copy_into(&exe, &out.join("fan.exe"))?;
+    println!("  fan.exe");
+
+    for name in ["setup.bat", "README.md", "LICENSE"] {
+        let src = root.join(name);
+        if src.exists() {
+            copy_into(&src, &out.join(name))?;
+            println!("  {name}");
+        } else {
+            println!("  {GRAY}{name} missing, skipped{RESET}");
+        }
+    }
+
+    // Ship pristine defaults rather than the local config, which holds this
+    // machine's device serial and personal tweaks.
+    std::fs::write(out.join("config.toml"), config::DEFAULT_CONFIG)
+        .map_err(|e| format!("could not write config.toml: {e}"))?;
+    println!("  config.toml {GRAY}(defaults, not your local copy){RESET}");
+
+    let modules = root.join("modules");
+    let mut count = 0;
+    if let Ok(entries) = std::fs::read_dir(&modules) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "bin") {
+                copy_into(&path, &out.join("modules").join(entry.file_name()))?;
+                count += 1;
+            }
+        }
+    }
+    println!("  modules/ {GRAY}({count} PawnIO modules){RESET}");
+    if count == 0 {
+        println!("  {GRAY}warning: without these, CPU temperature reads N/A{RESET}");
+    }
+
+    // Compress-Archive ships with Windows, so this needs nothing installed.
+    let zip = root.join("dist").join("CustomAIO.zip");
+    let status = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command"])
+        .arg(format!(
+            "Compress-Archive -Path '{}\\*' -DestinationPath '{}' -Force",
+            out.display(),
+            zip.display()
+        ))
+        .status();
+
+    println!("\n{GREEN}Package ready.{RESET}");
+    println!("  {WHITE}Folder{RESET}  {}", out.display());
+    match status {
+        Ok(s) if s.success() && zip.exists() => {
+            let size = std::fs::metadata(&zip).map(|m| m.len()).unwrap_or(0);
+            println!("  {WHITE}Zip{RESET}     {} ({:.1} MB)", zip.display(), size as f64 / 1_048_576.0);
+            println!("\n  {GRAY}Attach the zip to a GitHub release.{RESET}");
+        }
+        _ => {
+            println!("  {GRAY}Could not create the zip; compress the folder yourself.{RESET}");
+        }
+    }
+    println!("  {GRAY}To use: unzip anywhere, then run setup.bat as administrator.{RESET}\n");
+    Ok(())
+}
+
+fn copy_into(src: &std::path::Path, dst: &PathBuf) -> Result<(), String> {
+    std::fs::copy(src, dst)
+        .map(|_| ())
+        .map_err(|e| format!("could not copy {} -> {}: {e}", src.display(), dst.display()))
 }
 
 // ============================================================
@@ -354,6 +445,7 @@ fn help() {
     println!("  {WHITE}fan lcd{RESET}          Run the display service");
     println!("  {WHITE}fan preview{RESET}      Render a frame to PNG, no device needed");
     println!("  {WHITE}fan devices{RESET}      List detected coolers");
+    println!("  {WHITE}fan package{RESET}      Build a zip you can share");
     println!("  {GRAY}fan help{RESET}         Show this menu\n");
     println!("  {GRAY}Settings live in config.toml next to this program.{RESET}");
     println!("  {GRAY}`fan preview dial` previews one style without changing it.{RESET}\n");

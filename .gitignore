@@ -9,6 +9,10 @@
 # The binary setup.bat copies up from target\release.
 /fan.exe
 
+# Release packages built by `fan package`. Attach the zip to a GitHub
+# release rather than committing it.
+/dist
+
 # Editor and OS noise
 .vscode/
 .idea/
