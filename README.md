@@ -9,27 +9,32 @@ directly.
 
 ## Commands
 
-The binary is named `fan`, so once the folder is on your PATH:
+Once the folder is on your PATH:
 
 ```
-fan silent      Apply the Silent profile
-fan perf        Apply the Performance profile
-fan status      Cooler, active profile and temperatures
-fan lcd         Run the display service
-fan preview     Render a frame to PNG without a device
-fan devices     List detected coolers
-fan help
+customaio silent      Apply the Silent profile
+customaio perf        Apply the Performance profile
+customaio status      Cooler, active profile and temperatures
+customaio lcd         Run the display service
+customaio preview     Render a frame to PNG without a device
+customaio devices     List detected coolers
+customaio package     Build a distributable zip
+customaio help
 ```
 
-`fan preview dial` renders one style without changing your config.
+`setup.bat` also writes a one-line `fan.bat` beside the executable, so
+`fan silent`, `fan perf` and the rest work as a shorter alias for all of these.
+
+`customaio preview dial` renders one style without changing your config.
 
 ## Install
 
 1. `cargo build --release`
 2. Right-click `setup.bat`, **Run as administrator**, choose **Full setup**.
-   That copies the binary up from `target\release`, adds the folder to PATH,
-   and registers a logon task that runs `fan lcd --quiet` elevated.
-3. Open a new terminal and run `fan status`.
+   That copies the binary up from `target\release`, writes the `fan.bat`
+   alias, adds the folder to PATH, and registers a logon task that runs
+   `customaio lcd --quiet` elevated.
+3. Open a new terminal and run `customaio status`.
 
 Close NZXT CAM and the old Python service first - only one program can drive
 the cooler at a time.
@@ -45,7 +50,7 @@ needs into `target\release\CustomAIO\` and zips it to
 `target\release\CustomAIO.zip` (about 0.5 MB), ready to attach to a GitHub
 release.
 
-The package holds `fan.exe`, `config.toml` (pristine defaults, not your local
+The package holds `customaio.exe`, `fan.bat`, `config.toml` (pristine defaults, not your local
 copy), `setup.bat`, `modules\`, README and LICENSE. It is self-contained:
 copy the folder anywhere, or unzip the archive, and run `setup.bat` as
 administrator.
@@ -103,25 +108,27 @@ once and reused, so a steady-state frame allocates nothing.
 
 ## Skipping fan control
 
-Set `[fan] enabled = false`. `fan silent` and `fan perf` then refuse to run and
-nothing touches the speed channels; the LCD service is unaffected. Likewise
-`[display] lcd = false` runs it as a sensor-to-PNG service with no cooler.
+Set `[fan] enabled = false`. `customaio silent` and `customaio perf` then
+refuse to run and nothing touches the speed channels; the LCD service is
+unaffected. Likewise `[display] lcd = false` runs it as a sensor-to-PNG
+service with no cooler.
 
 ## Supported hardware
 
 Fully implemented and tested on the **Kraken Z53/Z63/Z73** (`1E71:3008`).
 
 The Kraken 2023/2024 models are recognised, and fan/pump control uses their
-channel IDs, but their firmware-2 image upload path is not implemented - `fan
-lcd` reports that clearly rather than failing silently. Everything outside the
-Kraken family is unsupported.
+channel IDs, but their firmware-2 image upload path is not implemented -
+`customaio lcd` reports that clearly rather than failing silently. Everything
+outside the Kraken family is unsupported.
 
 ## Layout
 
 ```
-fan.exe          the whole program
+customaio.exe    the whole program
+fan.bat          one-line `fan` alias, written by setup.bat
 config.toml      everything you can tune
-setup.bat        PATH, logon task, PawnIO check
+setup.bat        PATH, fan.bat, logon task, PawnIO check
 modules/         PawnIO blobs for CPU temperature
 data/            frame.png, customaio.log, profile.txt
 src/

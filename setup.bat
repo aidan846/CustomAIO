@@ -6,7 +6,7 @@ rem Right-click this file and choose "Run as administrator".
 
 set "HERE=%~dp0"
 if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"
-set "EXE=%HERE%\fan.exe"
+set "EXE=%HERE%\customaio.exe"
 set "TASK=CustomAIO LCD"
 
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
@@ -29,23 +29,33 @@ if errorlevel 1 (
 
 rem Use the freshly built binary if the release copy is newer or the top-level
 rem one is missing, so `cargo build --release` followed by setup just works.
-if exist "%HERE%\target\release\fan.exe" (
+if exist "%HERE%\target\release\customaio.exe" (
     if not exist "%EXE%" (
-        copy /Y "%HERE%\target\release\fan.exe" "%EXE%" >nul
+        copy /Y "%HERE%\target\release\customaio.exe" "%EXE%" >nul
     ) else (
-        for %%A in ("%HERE%\target\release\fan.exe") do set "NEWTS=%%~tA"
+        for %%A in ("%HERE%\target\release\customaio.exe") do set "NEWTS=%%~tA"
         for %%B in ("%EXE%") do set "OLDTS=%%~tB"
-        if not "!NEWTS!"=="!OLDTS!" copy /Y "%HERE%\target\release\fan.exe" "%EXE%" >nul
+        if not "!NEWTS!"=="!OLDTS!" copy /Y "%HERE%\target\release\customaio.exe" "%EXE%" >nul
     )
 )
 
 if not exist "%EXE%" (
-    echo %RED%fan.exe was not found.%RESET%
+    echo %RED%customaio.exe was not found.%RESET%
     echo %GRAY%Build it first:  cargo build --release%RESET%
     echo.
     pause
     exit /b 1
 )
+
+rem A one-line shim so the shorter "fan silent" still works alongside
+rem "customaio silent". Rewritten every run so it cannot go stale.
+> "%HERE%\fan.bat" echo @echo off
+>>"%HERE%\fan.bat" echo rem Shorter alias for customaio.exe, beside this file.
+>>"%HERE%\fan.bat" echo "%%~dp0customaio.exe" %%*
+
+rem Remove the binary from before the rename, so PATH cannot resolve "fan"
+rem to a stale copy that no longer gets updated.
+if exist "%HERE%\fan.exe" del /Q "%HERE%\fan.exe" >nul 2>&1
 
 :menu
 cls

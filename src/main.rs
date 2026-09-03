@@ -1,15 +1,16 @@
 //! CustomAIO - fan/pump profiles and an LCD readout for NZXT Kraken coolers.
 //!
-//! One binary, named `fan`, so the everyday commands read naturally:
+//! One binary. setup.bat adds a fan.bat shim beside it, so both the full
+//! name and the shorter `fan` spelling work:
 //!
-//!     fan silent      fan perf      fan status
-//!     fan lcd         fan preview   fan devices
+//!     customaio silent    customaio status    customaio lcd
+//!     fan silent          fan status          fan lcd
 //!
-//! `fan lcd` is the long-running service; everything else is a one-shot.
+//! `customaio lcd` is the long-running service; everything else is a one-shot.
 
 // Keep the console window from flashing when Task Scheduler starts the
 // service, while still behaving like a console app when launched from a
-// terminal. `fan lcd --quiet` is what the scheduled task uses.
+// terminal. `customaio lcd --quiet` is what the scheduled task uses.
 mod config;
 mod kraken;
 mod render;
@@ -112,7 +113,7 @@ fn main() -> std::process::ExitCode {
             help();
             Ok(())
         }
-        other => Err(format!("unknown command '{other}'. Try `fan help`.")),
+        other => Err(format!("unknown command '{other}'. Try `customaio help`.")),
     };
 
     match result {
@@ -225,7 +226,7 @@ fn devices() -> Result<(), String> {
 }
 
 /// Render a frame to PNG without touching any hardware. Useful for trying
-/// styles and colours. `fan preview dial` overrides the configured style.
+/// styles and colours. `customaio preview dial` overrides the configured style.
 fn preview(args: &[String]) -> Result<(), String> {
     let mut cfg = config::Config::load()?;
     if let Some(style) = args.first() {
@@ -269,9 +270,19 @@ fn package() -> Result<(), String> {
 
     // The running executable is the one that was just built, so copying it
     // avoids guessing at debug vs release paths.
-    let exe = std::env::current_exe().map_err(|e| format!("could not locate fan.exe: {e}"))?;
-    copy_into(&exe, &out.join("fan.exe"))?;
-    say!("  fan.exe");
+    let exe = std::env::current_exe().map_err(|e| format!("could not locate customaio.exe: {e}"))?;
+    copy_into(&exe, &out.join("customaio.exe"))?;
+    say!("  customaio.exe");
+
+    // The `fan` alias, so the package works before setup.bat has run.
+    std::fs::write(
+        out.join("fan.bat"),
+        "@echo off\r\n\
+         rem Shorter alias for customaio.exe, beside this file.\r\n\
+         \"%~dp0customaio.exe\" %*\r\n",
+    )
+    .map_err(|e| format!("could not write fan.bat: {e}"))?;
+    say!("  fan.bat {GRAY}(so `fan silent` works too){RESET}");
 
     for name in ["setup.bat", "README.md", "LICENSE"] {
         let src = root.join(name);
@@ -381,7 +392,7 @@ fn service(args: &[String]) -> Result<(), String> {
             "the CustomAIO display service is already running, most likely the \
              \"CustomAIO LCD\" scheduled task.\n       Two copies fight over the cooler's USB \
              interfaces, so this one stopped instead.\n       Stop the other first:  \
-             schtasks /End /TN \"CustomAIO LCD\"\n       Or just use `fan status`, which does \
+             schtasks /End /TN \"CustomAIO LCD\"\n       Or just use `customaio status`, which does \
              not conflict."
                 .into(),
         );
@@ -560,14 +571,16 @@ fn help() {
     say!("\n{CYAN}========================================{RESET}");
     say!("{WHITE}             CustomAIO{RESET}");
     say!("{CYAN}========================================{RESET}\n");
-    say!("  {GREEN}fan silent{RESET}       Apply the Silent profile");
-    say!("  {ORANGE}fan perf{RESET}         Apply the Performance profile");
-    say!("  {CYAN}fan status{RESET}       Cooler, profile and temperatures");
-    say!("  {WHITE}fan lcd{RESET}          Run the display service");
-    say!("  {WHITE}fan preview{RESET}      Render a frame to PNG, no device needed");
-    say!("  {WHITE}fan devices{RESET}      List detected coolers");
-    say!("  {WHITE}fan package{RESET}      Build a zip you can share");
-    say!("  {GRAY}fan help{RESET}         Show this menu\n");
+    say!("  {GREEN}customaio silent{RESET}    Apply the Silent profile");
+    say!("  {ORANGE}customaio perf{RESET}      Apply the Performance profile");
+    say!("  {CYAN}customaio status{RESET}    Cooler, profile and temperatures");
+    say!("  {WHITE}customaio lcd{RESET}       Run the display service");
+    say!("  {WHITE}customaio preview{RESET}   Render a frame to PNG, no device needed");
+    say!("  {WHITE}customaio devices{RESET}   List detected coolers");
+    say!("  {WHITE}customaio package{RESET}   Build a zip you can share");
+    say!("  {GRAY}customaio help{RESET}      Show this menu\n");
+    say!("  {GRAY}`fan` is a shorter alias for all of the above:{RESET}");
+    say!("  {GRAY}fan silent, fan perf, fan status ...{RESET}\n");
     say!("  {GRAY}Settings live in config.toml next to this program.{RESET}");
     say!("  {GRAY}`fan preview dial` previews one style without changing it.{RESET}\n");
 }

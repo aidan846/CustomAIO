@@ -6,7 +6,9 @@
 # backup of any scheduled task setup.bat replaced. All machine-local.
 /data
 
-# The binary setup.bat copies up from target\release.
+# Built binary and the generated `fan` alias, copied/created by setup.bat.
+/customaio.exe
+/fan.bat
 /fan.exe
 
 # Editor and OS noise

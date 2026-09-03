@@ -3,10 +3,10 @@ name = "customaio"
 version = "0.2.0"
 edition = "2021"
 
-# The binary is named `fan` so that `fan silent`, `fan perf`, `fan lcd`
-# work from any terminal once this folder is on PATH.
+# setup.bat also drops a one-line fan.bat beside the executable, so the
+# shorter `fan silent` / `fan perf` still work from any terminal.
 [[bin]]
-name = "fan"
+name = "customaio"
 path = "src/main.rs"
 
 [dependencies]
