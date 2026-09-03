@@ -342,8 +342,50 @@ fn copy_into(src: &std::path::Path, dst: &PathBuf) -> Result<(), String> {
 // The LCD service
 // ============================================================
 
+/// Refuse to start a second display service.
+///
+/// Two instances fight over the cooler's HID and bulk interfaces, and the
+/// loser reports missing replies and an unopenable bulk endpoint - which reads
+/// like a driver problem rather than the contention it actually is. A named
+/// mutex in the session namespace catches it up front.
+///
+/// The scheduled task runs elevated while a hand-run copy usually is not, so
+/// the mutex may already exist at a higher integrity level and come back as
+/// access-denied instead of already-exists. Both mean the same thing here.
+#[cfg(windows)]
+fn another_service_running() -> bool {
+    use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, GetLastError};
+    use windows_sys::Win32::System::Threading::CreateMutexW;
+
+    // Kept for the life of the process; the OS releases it on exit.
+    let name: Vec<u16> = "Local\\CustomAIO.LcdService\0".encode_utf16().collect();
+    unsafe {
+        let handle = CreateMutexW(std::ptr::null(), 1, name.as_ptr());
+        let err = GetLastError();
+        if handle.is_null() {
+            return err == ERROR_ACCESS_DENIED;
+        }
+        err == ERROR_ALREADY_EXISTS
+    }
+}
+
+#[cfg(not(windows))]
+fn another_service_running() -> bool {
+    false
+}
+
 fn service(args: &[String]) -> Result<(), String> {
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
+    if another_service_running() {
+        return Err(
+            "the CustomAIO display service is already running, most likely the \
+             \"CustomAIO LCD\" scheduled task.\n       Two copies fight over the cooler's USB \
+             interfaces, so this one stopped instead.\n       Stop the other first:  \
+             schtasks /End /TN \"CustomAIO LCD\"\n       Or just use `fan status`, which does \
+             not conflict."
+                .into(),
+        );
+    }
     if quiet {
         // Detach from the console Task Scheduler hands us, so the service
         // leaves no window on the desktop. Staying in the user's session
