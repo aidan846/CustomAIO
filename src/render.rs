@@ -101,11 +101,13 @@ impl Renderer {
             return;
         }
 
-        // One row occupies half the screen when both are shown, all of it when
-        // only one is.
-        let block = GRID / rows.len() as f32;
+        // Rows are spaced by a fixed 135px rather than splitting the panel in
+        // half. An even split puts the second row 25px lower, which pushes its
+        // scale labels against the bottom edge; 135 is the original spacing.
+        let single = rows.len() == 1;
         for (i, (label, temp, accent)) in rows.into_iter().enumerate() {
-            let top = i as f32 * block;
+            // A lone row is centred instead of sitting at the top.
+            let top = if single { 75.0 } else { i as f32 * 135.0 };
             if f.opts.show_labels {
                 self.text_centered(label, top + 30.0, 18.0, &f.colors.text, false);
             }
