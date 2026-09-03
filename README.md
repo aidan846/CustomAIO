@@ -14,13 +14,27 @@ Once the folder is on your PATH:
 ```
 customaio silent      Apply the Silent profile
 customaio perf        Apply the Performance profile
-customaio status      Cooler, active profile and temperatures
-customaio lcd         Run the display service
+customaio status      Cooler, service state, profile and temperatures
+customaio start       Start the display service in the background
+customaio stop        Stop the display service
+customaio restart     Restart it, picking up config.toml changes
+customaio lcd         Run it in this window, printing each reading
 customaio preview     Render a frame to PNG without a device
 customaio devices     List detected coolers
 customaio package     Build a distributable zip
 customaio help
 ```
+
+`start` runs the service detached, so it keeps going after you close the
+terminal. `lcd` is the opposite: it runs in the foreground and prints every
+reading, which is what you want when testing a style or diagnosing a sensor -
+close the window and it stops. Only one of them can run at a time; whichever
+starts second reports the conflict rather than fighting for the USB device.
+
+`start` prefers the logon task, because that runs elevated and CPU
+temperature needs elevation. If no task is installed it still launches
+detached, and says that CPU temperature will read `N/A` unless you started it
+from an administrator prompt.
 
 `setup.bat` also writes a one-line `fan.bat` beside the executable, so
 `fan silent`, `fan perf` and the rest work as a shorter alias for all of these.

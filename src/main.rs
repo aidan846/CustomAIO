@@ -105,6 +105,9 @@ fn main() -> std::process::ExitCode {
         "silent" => apply_profile("silent"),
         "perf" | "performance" => apply_profile("performance"),
         "status" => status(),
+        "start" => start_service(),
+        "stop" => stop_service(),
+        "restart" => restart_service(),
         "lcd" | "service" => service(rest),
         "preview" => preview(rest),
         "devices" | "list" => devices(),
@@ -160,6 +163,11 @@ fn status() -> Result<(), String> {
     header("Status");
 
     let last = std::fs::read_to_string(data_path("profile.txt")).unwrap_or_else(|_| "unknown".into());
+    if service_running() {
+        say!("  {WHITE}Service{RESET}       {GREEN}running{RESET}");
+    } else {
+        say!("  {WHITE}Service{RESET}       {GRAY}stopped{RESET}  (start it with `customaio start`)");
+    }
     let device = kraken::Kraken::open(&cfg.device)?;
     say!("  {WHITE}Device{RESET}        {}", device.model.name);
     say!("  {WHITE}Serial{RESET}        {}", device.serial);
@@ -350,6 +358,134 @@ fn copy_into(src: &std::path::Path, dst: &PathBuf) -> Result<(), String> {
 }
 
 // ============================================================
+// Starting and stopping the background service
+// ============================================================
+
+const TASK_NAME: &str = "CustomAIO LCD";
+
+/// Run a helper process without flashing a console window.
+fn quiet_command(program: &str) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
+fn logon_task_exists() -> bool {
+    quiet_command("schtasks")
+        .args(["/Query", "/TN", TASK_NAME])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Start the display service in the background.
+///
+/// The logon task is preferred because it runs elevated, which is what makes
+/// CPU temperature readable. Without it we still detach a process, but say so,
+/// since it inherits this terminal's privileges.
+fn start_service() -> Result<(), String> {
+    header("Starting the display service");
+
+    if service_running() {
+        say!("  {GRAY}Already running. Use `customaio restart` to reload config.toml.{RESET}\n");
+        return Ok(());
+    }
+
+    if logon_task_exists() {
+        let ok = quiet_command("schtasks")
+            .args(["/Run", "/TN", TASK_NAME])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if ok {
+            say!("  {GREEN}Started via the \"{TASK_NAME}\" task.{RESET}");
+            say!("  {GRAY}It runs elevated, so CPU temperature is available.{RESET}\n");
+            return Ok(());
+        }
+        say!("  {GRAY}The scheduled task would not start; launching directly.{RESET}");
+    }
+
+    // Detach fully, so closing this terminal does not take the service with it.
+    let exe = std::env::current_exe().map_err(|e| format!("could not locate customaio.exe: {e}"))?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["lcd", "--quiet"]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    cmd.spawn().map_err(|e| format!("could not start the service: {e}"))?;
+
+    say!("  {GREEN}Started in the background.{RESET}");
+    if !logon_task_exists() {
+        say!("  {GRAY}No logon task exists, so this will not come back after a reboot.{RESET}");
+        say!("  {GRAY}Run setup.bat as administrator to install one.{RESET}");
+    }
+    say!("  {GRAY}Started from this terminal, so it inherits your privileges;{RESET}");
+    say!("  {GRAY}CPU temperature needs an elevated prompt or the logon task.{RESET}\n");
+    Ok(())
+}
+
+/// Stop the service, whether it came from the logon task or a direct launch.
+fn stop_service() -> Result<(), String> {
+    header("Stopping the display service");
+
+    if logon_task_exists() {
+        let _ = quiet_command("schtasks").args(["/End", "/TN", TASK_NAME]).output();
+        say!("  {GRAY}Ended the \"{TASK_NAME}\" task.{RESET}");
+    }
+
+    // Kill any remaining instance, skipping this process. fan.exe is the
+    // pre-rename name and may still be installed.
+    let me = std::process::id();
+    let mut killed = false;
+    for image in ["customaio.exe", "fan.exe"] {
+        let out = quiet_command("taskkill")
+            .args(["/F", "/IM", image, "/FI", &format!("PID ne {me}")])
+            .output();
+        if let Ok(o) = out {
+            if o.status.success() {
+                killed = true;
+            }
+        }
+    }
+    if killed {
+        say!("  {GRAY}Stopped a running instance.{RESET}");
+    }
+
+    // The lock is released as the process exits, which lags taskkill by a
+    // moment; poll briefly rather than reporting a failure that isn't one.
+    for _ in 0..30 {
+        if !service_running() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    if service_running() {
+        say!("\n  {GRAY}Something still holds the service lock. If it was started{RESET}");
+        say!("  {GRAY}elevated, stop it from an administrator prompt.{RESET}\n");
+    } else {
+        say!("\n{GREEN}Service stopped.{RESET}\n");
+    }
+    Ok(())
+}
+
+fn restart_service() -> Result<(), String> {
+    stop_service()?;
+    // Give the old process a moment to release the cooler's USB interfaces.
+    std::thread::sleep(Duration::from_millis(1500));
+    start_service()
+}
+
+// ============================================================
 // The LCD service
 // ============================================================
 
@@ -364,12 +500,16 @@ fn copy_into(src: &std::path::Path, dst: &PathBuf) -> Result<(), String> {
 /// the mutex may already exist at a higher integrity level and come back as
 /// access-denied instead of already-exists. Both mean the same thing here.
 #[cfg(windows)]
-fn another_service_running() -> bool {
+const SERVICE_MUTEX: &str = "Local\\CustomAIO.LcdService\0";
+
+/// Take the service lock, reporting whether someone already held it. The
+/// handle is deliberately leaked so the lock lives as long as the process.
+#[cfg(windows)]
+fn claim_service_lock() -> bool {
     use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, GetLastError};
     use windows_sys::Win32::System::Threading::CreateMutexW;
 
-    // Kept for the life of the process; the OS releases it on exit.
-    let name: Vec<u16> = "Local\\CustomAIO.LcdService\0".encode_utf16().collect();
+    let name: Vec<u16> = SERVICE_MUTEX.encode_utf16().collect();
     unsafe {
         let handle = CreateMutexW(std::ptr::null(), 1, name.as_ptr());
         let err = GetLastError();
@@ -380,20 +520,49 @@ fn another_service_running() -> bool {
     }
 }
 
+/// Ask whether a service is running *without* taking the lock. `start` must
+/// use this: creating the mutex here would leave this process holding it, and
+/// the service it then spawns would see the lock and refuse to run.
+#[cfg(windows)]
+fn service_running() -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ACCESS_DENIED, GetLastError};
+    use windows_sys::Win32::System::Threading::OpenMutexW;
+
+    // windows-sys only exposes SYNCHRONIZE under an unrelated file-system
+    // feature, so use the value directly rather than pulling that in.
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+
+    let name: Vec<u16> = SERVICE_MUTEX.encode_utf16().collect();
+    unsafe {
+        let handle = OpenMutexW(SYNCHRONIZE, 0, name.as_ptr());
+        if handle.is_null() {
+            // The elevated task's mutex can be unopenable from a normal
+            // prompt; that still means a service is running.
+            return GetLastError() == ERROR_ACCESS_DENIED;
+        }
+        CloseHandle(handle);
+        true
+    }
+}
+
 #[cfg(not(windows))]
-fn another_service_running() -> bool {
+fn claim_service_lock() -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+fn service_running() -> bool {
     false
 }
 
 fn service(args: &[String]) -> Result<(), String> {
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
-    if another_service_running() {
+    if claim_service_lock() {
         return Err(
             "the CustomAIO display service is already running, most likely the \
              \"CustomAIO LCD\" scheduled task.\n       Two copies fight over the cooler's USB \
-             interfaces, so this one stopped instead.\n       Stop the other first:  \
-             schtasks /End /TN \"CustomAIO LCD\"\n       Or just use `customaio status`, which does \
-             not conflict."
+             interfaces, so this one stopped instead.\n       Stop it first with:  customaio stop\
+             \n       Or use `customaio status`, which does not conflict."
                 .into(),
         );
     }
@@ -574,7 +743,10 @@ fn help() {
     say!("  {GREEN}customaio silent{RESET}    Apply the Silent profile");
     say!("  {ORANGE}customaio perf{RESET}      Apply the Performance profile");
     say!("  {CYAN}customaio status{RESET}    Cooler, profile and temperatures");
-    say!("  {WHITE}customaio lcd{RESET}       Run the display service");
+    say!("  {GREEN}customaio start{RESET}     Start the display service in the background");
+    say!("  {ORANGE}customaio stop{RESET}      Stop the display service");
+    say!("  {WHITE}customaio restart{RESET}   Restart it, picking up config.toml changes");
+    say!("  {WHITE}customaio lcd{RESET}       Run it in this window, printing readings");
     say!("  {WHITE}customaio preview{RESET}   Render a frame to PNG, no device needed");
     say!("  {WHITE}customaio devices{RESET}   List detected coolers");
     say!("  {WHITE}customaio package{RESET}   Build a zip you can share");
