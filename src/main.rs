@@ -17,7 +17,83 @@ mod sensors;
 
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+
+/// Print a line, dropping colour codes when the terminal cannot render them.
+/// Every user-facing message goes through this rather than `println!`.
+macro_rules! say {
+    () => { emit(String::new()) };
+    ($($arg:tt)*) => { emit(format!($($arg)*)) };
+}
+
+/// Whether ANSI escapes will actually be rendered.
+///
+/// Windows consoles ignore escape sequences and print them literally unless
+/// virtual terminal processing is enabled, so we turn it on and report whether
+/// that worked. `GetConsoleMode` also fails when stdout is a file or a pipe,
+/// which is exactly when colour codes would be noise, so the same check covers
+/// redirection. `NO_COLOR` is honoured by convention.
+fn colors_enabled() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| {
+        if std::env::var_os("NO_COLOR").is_some() {
+            return false;
+        }
+        #[cfg(windows)]
+        unsafe {
+            use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+            use windows_sys::Win32::System::Console::{
+                GetConsoleMode, GetStdHandle, SetConsoleMode,
+                ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
+            };
+            let handle = GetStdHandle(STD_OUTPUT_HANDLE);
+            if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+                return false;
+            }
+            let mut mode = 0u32;
+            if GetConsoleMode(handle, &mut mode) == 0 {
+                return false;
+            }
+            if mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0 {
+                return true;
+            }
+            SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0
+        }
+        #[cfg(not(windows))]
+        true
+    })
+}
+
+/// Remove `ESC [ ... m` sequences, for terminals that would print them raw.
+fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        // Skip "[ <digits and semicolons> m".
+        if chars.next() != Some('[') {
+            continue;
+        }
+        for c in chars.by_ref() {
+            if c.is_ascii_alphabetic() {
+                break;
+            }
+        }
+    }
+    out
+}
+
+fn emit(line: String) {
+    if colors_enabled() {
+        println!("{line}");
+    } else {
+        println!("{}", strip_ansi(&line));
+    }
+}
 
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -42,7 +118,8 @@ fn main() -> std::process::ExitCode {
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("{RED}Error:{RESET} {e}");
+            let msg = format!("{RED}Error:{RESET} {e}");
+            eprintln!("{}", if colors_enabled() { msg } else { strip_ansi(&msg) });
             std::process::ExitCode::FAILURE
         }
     }
@@ -64,16 +141,16 @@ fn apply_profile(name: &str) -> Result<(), String> {
 
     header(&format!("Applying {name} profile"));
     let device = kraken::Kraken::open(&cfg.device)?;
-    println!("  {GRAY}{}{RESET}", device.model.name);
+    say!("  {GRAY}{}{RESET}", device.model.name);
 
     // Pump first: it should already be ramping before the fans follow.
     device.set_curve(kraken::Channel::Pump, &profile.pump)?;
-    println!("  pump curve set");
+    say!("  pump curve set");
     device.set_curve(kraken::Channel::Fan, &profile.fan)?;
-    println!("  fan curve set");
+    say!("  fan curve set");
 
     let _ = std::fs::write(data_path("profile.txt"), name);
-    println!("\n{GREEN}{name} profile applied.{RESET}\n");
+    say!("\n{GREEN}{name} profile applied.{RESET}\n");
     Ok(())
 }
 
@@ -83,27 +160,27 @@ fn status() -> Result<(), String> {
 
     let last = std::fs::read_to_string(data_path("profile.txt")).unwrap_or_else(|_| "unknown".into());
     let device = kraken::Kraken::open(&cfg.device)?;
-    println!("  {WHITE}Device{RESET}        {}", device.model.name);
-    println!("  {WHITE}Serial{RESET}        {}", device.serial);
-    println!("  {WHITE}Last profile{RESET}  {}", last.trim());
+    say!("  {WHITE}Device{RESET}        {}", device.model.name);
+    say!("  {WHITE}Serial{RESET}        {}", device.serial);
+    say!("  {WHITE}Last profile{RESET}  {}", last.trim());
 
     match device.status() {
         Ok(s) => {
-            println!("  {WHITE}Liquid{RESET}        {:.1} C", s.liquid_temp);
-            println!("  {WHITE}Pump{RESET}          {} RPM ({}%)", s.pump_rpm, s.pump_duty);
-            println!("  {WHITE}Fan{RESET}           {} RPM ({}%)", s.fan_rpm, s.fan_duty);
+            say!("  {WHITE}Liquid{RESET}        {:.1} C", s.liquid_temp);
+            say!("  {WHITE}Pump{RESET}          {} RPM ({}%)", s.pump_rpm, s.pump_duty);
+            say!("  {WHITE}Fan{RESET}           {} RPM ({}%)", s.fan_rpm, s.fan_duty);
         }
-        Err(e) => println!("  {GRAY}cooler status unavailable - {e}{RESET}"),
+        Err(e) => say!("  {GRAY}cooler status unavailable - {e}{RESET}"),
     }
 
     let (readings, notes) = sensors::Readings::open(&cfg.sensors);
     let (cpu, gpu) = readings.sample();
-    println!("  {WHITE}CPU{RESET}           {}", temp_or_na(cpu));
-    println!("  {WHITE}GPU{RESET}           {}", temp_or_na(gpu));
+    say!("  {WHITE}CPU{RESET}           {}", temp_or_na(cpu));
+    say!("  {WHITE}GPU{RESET}           {}", temp_or_na(gpu));
     for n in notes {
-        println!("  {GRAY}{n}{RESET}");
+        say!("  {GRAY}{n}{RESET}");
     }
-    println!();
+    say!();
     Ok(())
 }
 
@@ -126,14 +203,14 @@ fn devices() -> Result<(), String> {
         }
         seen.push(key);
         found += 1;
-        println!("  {WHITE}{}{RESET}", model.name);
-        println!(
+        say!("  {WHITE}{}{RESET}", model.name);
+        say!(
             "    VID 0x{:04X}  PID 0x{:04X}  serial {}",
             model.vid,
             model.pid,
             if serial.is_empty() { "not reported" } else { &serial }
         );
-        println!(
+        say!(
             "    LCD {}x{}{}",
             model.resolution.0,
             model.resolution.1,
@@ -141,9 +218,9 @@ fn devices() -> Result<(), String> {
         );
     }
     if found == 0 {
-        println!("  {GRAY}none found - check the USB header and close NZXT CAM{RESET}");
+        say!("  {GRAY}none found - check the USB header and close NZXT CAM{RESET}");
     }
-    println!();
+    say!();
     Ok(())
 }
 
@@ -166,7 +243,7 @@ fn preview(args: &[String]) -> Result<(), String> {
     let pixmap = renderer.draw(&cfg.style, cpu, gpu, cfg.display.rotation);
     let out = config::resolve(&cfg.display.png_path);
     render::write_png(pixmap, &out)?;
-    println!("Style '{}' rendered to {}", cfg.style.name, out.display());
+    say!("Style '{}' rendered to {}", cfg.style.name, out.display());
     Ok(())
 }
 
@@ -194,15 +271,15 @@ fn package() -> Result<(), String> {
     // avoids guessing at debug vs release paths.
     let exe = std::env::current_exe().map_err(|e| format!("could not locate fan.exe: {e}"))?;
     copy_into(&exe, &out.join("fan.exe"))?;
-    println!("  fan.exe");
+    say!("  fan.exe");
 
     for name in ["setup.bat", "README.md", "LICENSE"] {
         let src = root.join(name);
         if src.exists() {
             copy_into(&src, &out.join(name))?;
-            println!("  {name}");
+            say!("  {name}");
         } else {
-            println!("  {GRAY}{name} missing, skipped{RESET}");
+            say!("  {GRAY}{name} missing, skipped{RESET}");
         }
     }
 
@@ -210,7 +287,7 @@ fn package() -> Result<(), String> {
     // machine's device serial and personal tweaks.
     std::fs::write(out.join("config.toml"), config::DEFAULT_CONFIG)
         .map_err(|e| format!("could not write config.toml: {e}"))?;
-    println!("  config.toml {GRAY}(defaults, not your local copy){RESET}");
+    say!("  config.toml {GRAY}(defaults, not your local copy){RESET}");
 
     let modules = root.join("modules");
     let mut count = 0;
@@ -223,9 +300,9 @@ fn package() -> Result<(), String> {
             }
         }
     }
-    println!("  modules/ {GRAY}({count} PawnIO modules){RESET}");
+    say!("  modules/ {GRAY}({count} PawnIO modules){RESET}");
     if count == 0 {
-        println!("  {GRAY}warning: without these, CPU temperature reads N/A{RESET}");
+        say!("  {GRAY}warning: without these, CPU temperature reads N/A{RESET}");
     }
 
     // Compress-Archive ships with Windows, so this needs nothing installed.
@@ -239,19 +316,19 @@ fn package() -> Result<(), String> {
         ))
         .status();
 
-    println!("\n{GREEN}Package ready.{RESET}");
-    println!("  {WHITE}Folder{RESET}  {}", out.display());
+    say!("\n{GREEN}Package ready.{RESET}");
+    say!("  {WHITE}Folder{RESET}  {}", out.display());
     match status {
         Ok(s) if s.success() && zip.exists() => {
             let size = std::fs::metadata(&zip).map(|m| m.len()).unwrap_or(0);
-            println!("  {WHITE}Zip{RESET}     {} ({:.1} MB)", zip.display(), size as f64 / 1_048_576.0);
-            println!("\n  {GRAY}Attach the zip to a GitHub release.{RESET}");
+            say!("  {WHITE}Zip{RESET}     {} ({:.1} MB)", zip.display(), size as f64 / 1_048_576.0);
+            say!("\n  {GRAY}Attach the zip to a GitHub release.{RESET}");
         }
         _ => {
-            println!("  {GRAY}Could not create the zip; compress the folder yourself.{RESET}");
+            say!("  {GRAY}Could not create the zip; compress the folder yourself.{RESET}");
         }
     }
-    println!("  {GRAY}To use: unzip anywhere, then run setup.bat as administrator.{RESET}\n");
+    say!("  {GRAY}To use: unzip anywhere, then run setup.bat as administrator.{RESET}\n");
     Ok(())
 }
 
@@ -392,10 +469,11 @@ impl Logger {
 
     fn write(&mut self, line: &str) {
         if self.console {
-            println!("{line}");
+            emit(line.to_string());
         }
         if let Some(f) = self.file.as_mut() {
-            let _ = writeln!(f, "{line}");
+            // The log file never wants escape codes, whatever the console does.
+            let _ = writeln!(f, "{}", strip_ansi(line));
         }
     }
 
@@ -430,24 +508,24 @@ const ORANGE: &str = "\x1b[38;5;208m";
 const YELLOW: &str = "\x1b[93m";
 
 fn header(title: &str) {
-    println!("\n{CYAN}========================================{RESET}");
-    println!("{WHITE}             CustomAIO{RESET}");
-    println!("{CYAN}========================================{RESET}\n");
-    println!("{YELLOW}{title}{RESET}\n");
+    say!("\n{CYAN}========================================{RESET}");
+    say!("{WHITE}             CustomAIO{RESET}");
+    say!("{CYAN}========================================{RESET}\n");
+    say!("{YELLOW}{title}{RESET}\n");
 }
 
 fn help() {
-    println!("\n{CYAN}========================================{RESET}");
-    println!("{WHITE}             CustomAIO{RESET}");
-    println!("{CYAN}========================================{RESET}\n");
-    println!("  {GREEN}fan silent{RESET}       Apply the Silent profile");
-    println!("  {ORANGE}fan perf{RESET}         Apply the Performance profile");
-    println!("  {CYAN}fan status{RESET}       Cooler, profile and temperatures");
-    println!("  {WHITE}fan lcd{RESET}          Run the display service");
-    println!("  {WHITE}fan preview{RESET}      Render a frame to PNG, no device needed");
-    println!("  {WHITE}fan devices{RESET}      List detected coolers");
-    println!("  {WHITE}fan package{RESET}      Build a zip you can share");
-    println!("  {GRAY}fan help{RESET}         Show this menu\n");
-    println!("  {GRAY}Settings live in config.toml next to this program.{RESET}");
-    println!("  {GRAY}`fan preview dial` previews one style without changing it.{RESET}\n");
+    say!("\n{CYAN}========================================{RESET}");
+    say!("{WHITE}             CustomAIO{RESET}");
+    say!("{CYAN}========================================{RESET}\n");
+    say!("  {GREEN}fan silent{RESET}       Apply the Silent profile");
+    say!("  {ORANGE}fan perf{RESET}         Apply the Performance profile");
+    say!("  {CYAN}fan status{RESET}       Cooler, profile and temperatures");
+    say!("  {WHITE}fan lcd{RESET}          Run the display service");
+    say!("  {WHITE}fan preview{RESET}      Render a frame to PNG, no device needed");
+    say!("  {WHITE}fan devices{RESET}      List detected coolers");
+    say!("  {WHITE}fan package{RESET}      Build a zip you can share");
+    say!("  {GRAY}fan help{RESET}         Show this menu\n");
+    say!("  {GRAY}Settings live in config.toml next to this program.{RESET}");
+    say!("  {GRAY}`fan preview dial` previews one style without changing it.{RESET}\n");
 }
