@@ -1,0 +1,41 @@
+[package]
+name = "customaio"
+version = "0.2.0"
+edition = "2021"
+
+# The binary is named `fan` so that `fan silent`, `fan perf`, `fan lcd`
+# work from any terminal once this folder is on PATH.
+[[bin]]
+name = "fan"
+path = "src/main.rs"
+
+[dependencies]
+# Config
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# Sensors
+libloading = "0.8"           # PawnIO driver (CPU temperature via MSR/SMN)
+nvml-wrapper = "0.10"        # NVIDIA GPU temperature, direct nvml.dll calls
+
+# Device I/O
+hidapi = "2"                 # Kraken control interface (fan, pump, LCD commands)
+rusb = "0.9"                 # Kraken bulk interface (LCD image upload)
+
+# Rendering
+tiny-skia = "0.11"           # 2D rasterizer for the frame
+ab_glyph = "0.2"             # TrueType text
+png = "0.17"                 # frame.png output
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+] }
+
+[profile.release]
+opt-level = "z"     # optimize for size; this is an idle background service
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

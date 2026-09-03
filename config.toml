@@ -1,0 +1,93 @@
+﻿# CustomAIO configuration.
+# Every key is optional - delete anything you don't want to override.
+# Run `fan preview` after editing to render data/frame.png without a device.
+
+[general]
+# Seconds between updates. The service sleeps in between, so a larger
+# number costs less power. 1-2 is smooth, 5-10 is nearly free.
+update_interval = 1.0
+# Write data/customaio.log. Set false for zero disk writes while idle.
+log = true
+
+[display]
+# Push frames to the cooler's LCD.
+lcd = true
+# Also write each frame to disk. Handy for tweaking styles without the
+# cooler attached, or for pointing OBS / a wallpaper app at the image.
+# This is the single most expensive thing the service does - PNG encoding
+# costs roughly 7x more CPU than everything else combined. Turn it off
+# once you have your style dialled in.
+save_png = true
+png_path = "data/frame.png"
+# 0, 90, 180 or 270. Applied while drawing, so the device is left at 0.
+rotation = 90
+# LCD backlight, 0-100.
+brightness = 100
+
+[device]
+# Which cooler to use. Leave as 0 / "" to take the first one found.
+vendor_id = 0
+product_id = 0
+serial = ""
+
+[sensors]
+# auto = detect the CPU vendor and load the matching PawnIO module.
+# Options: auto | pawnio | none
+cpu = "auto"
+# auto = NVML if an NVIDIA card is present, otherwise the vendor-neutral
+# WDDM path that also covers AMD and Intel. Options: auto | nvidia | none
+gpu = "auto"
+# Folder holding the PawnIO .bin modules, relative to the executable.
+pawnio_modules = "modules"
+
+[style]
+# classic  - the original layout: label, big number, horizontal bar
+# stacked  - CPU over GPU, large numbers, no bars
+# dial     - circular gauges
+# minimal  - just the two numbers, nothing else
+name = "classic"
+
+[style.colors]
+background = "#000000"
+text = "#FFFFFF"
+accent = "#FF7A1A"
+# Set different from `accent` to colour the GPU readout separately.
+accent_gpu = "#FF7A1A"
+track = "#202020"
+alert_background = "#FF0000"
+alert_text = "#FFFFFF"
+
+[style.options]
+show_cpu = true
+show_gpu = true
+show_bars = true
+show_labels = true
+# The small 20C / 90C end labels on the bars.
+show_scale = true
+show_degree_symbol = true
+# Take over the whole screen with a warning above the alert temperatures.
+alert_enabled = true
+cpu_alert_temp = 85.0
+gpu_alert_temp = 85.0
+# The temperature range the bars and dials map onto.
+bar_min = 20.0
+bar_max = 90.0
+# Fade the readout from `text` toward `accent` as it heats up.
+color_by_temp = false
+font = 'C:\Windows\Fonts\segoeui.ttf'
+font_bold = 'C:\Windows\Fonts\segoeuib.ttf'
+
+[fan]
+# Set false to ignore fan control entirely; `fan silent` / `fan perf`
+# will then refuse to run and nothing touches the speed channels.
+enabled = true
+
+# Curves are [liquid temperature C, duty %] points. The firmware
+# interpolates between them across 20-59 C.
+[fan.silent]
+pump = [[20, 60], [35, 60], [40, 70], [45, 80], [50, 90], [55, 100]]
+fan = [[20, 30], [35, 30], [40, 40], [45, 55], [50, 75], [55, 100]]
+
+[fan.performance]
+pump = [[20, 70], [35, 70], [40, 80], [45, 85], [50, 90], [55, 95], [60, 100]]
+fan = [[20, 50], [35, 50], [40, 60], [45, 70], [50, 80], [55, 90], [60, 100]]
