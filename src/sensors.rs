@@ -201,13 +201,15 @@ impl CpuSensor {
         Ok(s)
     }
 
+    // PawnIO modules validate in_size and out_size exactly and reject anything
+    // else with STATUS_INVALID_PARAMETER, so these buffers must be 1 entry.
     fn msr(&self, index: u64) -> Option<u64> {
-        let mut out = [0u64; 2];
+        let mut out = [0u64; 1];
         self.io.call(&self.read_msr, &[index], &mut out).map(|_| out[0])
     }
 
     fn smn(&self, address: u64) -> Option<u64> {
-        let mut out = [0u64; 2];
+        let mut out = [0u64; 1];
         self.io.call(&self.read_smn, &[address], &mut out).map(|_| out[0])
     }
 
