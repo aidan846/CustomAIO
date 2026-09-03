@@ -37,17 +37,23 @@ the cooler at a time.
 ## Building a release
 
 ```
-cargo build --release
-target\release\fan.exe package
+cargo dist
 ```
 
-That assembles `dist\CustomAIO\` - the executable, `config.toml` with
-pristine defaults, `setup.bat`, the PawnIO modules, README and LICENSE - and
-zips it to `dist\CustomAIO.zip`, ready to attach to a GitHub release. The
-folder is self-contained: unzip anywhere and run `setup.bat`.
+One command: it builds in release mode, then assembles everything a user
+needs into `target\release\CustomAIO\` and zips it to
+`target\release\CustomAIO.zip` (about 0.5 MB), ready to attach to a GitHub
+release.
 
-It writes to `dist\` rather than `target\` because `cargo clean` wipes
-`target`, which would delete a release you were about to upload.
+The package holds `fan.exe`, `config.toml` (pristine defaults, not your local
+copy), `setup.bat`, `modules\`, README and LICENSE. It is self-contained:
+copy the folder anywhere, or unzip the archive, and run `setup.bat` as
+administrator.
+
+`cargo dist` is an alias defined in `.cargo\config.toml`; Cargo has no
+post-build hook, so packaging cannot be attached to a plain `cargo build`.
+Note that `cargo clean` deletes everything under `target`, this package
+included, so move a release you want to keep out of there first.
 
 ## Where temperatures come from
 

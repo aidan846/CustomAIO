@@ -170,15 +170,16 @@ fn preview(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Assemble everything a user needs to run CustomAIO into dist\CustomAIO,
-/// then zip it. The output folder is self-contained: unzip it anywhere and
-/// run setup.bat.
+/// Assemble everything a user needs to run CustomAIO into
+/// target\release\CustomAIO, then zip it alongside. The folder is
+/// self-contained: copy it anywhere, or unzip the archive, and run setup.bat.
 ///
-/// It lives in dist\ rather than target\ because `cargo clean` wipes target,
-/// which would silently delete a release you were about to upload.
+/// Note that `cargo clean` deletes everything under target, this package
+/// included, so move a release you intend to keep out of there.
 fn package() -> Result<(), String> {
     let root = config::base_dir();
-    let out = root.join("dist").join("CustomAIO");
+    let dest = root.join("target").join("release");
+    let out = dest.join("CustomAIO");
     header("Building release package");
 
     // Start clean, so a file removed from the project can't linger in a
@@ -228,7 +229,7 @@ fn package() -> Result<(), String> {
     }
 
     // Compress-Archive ships with Windows, so this needs nothing installed.
-    let zip = root.join("dist").join("CustomAIO.zip");
+    let zip = dest.join("CustomAIO.zip");
     let status = std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command"])
         .arg(format!(

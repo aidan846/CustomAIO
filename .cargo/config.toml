@@ -1,0 +1,7 @@
+# `cargo dist` builds in release mode and then runs the packaging step, so a
+# shareable target\release\CustomAIO folder and .zip come from one command.
+#
+# Cargo has no hook that runs after a build, so this is an alias rather than
+# something `cargo build` does on its own.
+[alias]
+dist = "run --release --quiet -- package"
