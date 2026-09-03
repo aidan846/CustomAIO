@@ -4,8 +4,9 @@ Fan and pump profiles, plus a temperature readout on the cooler's LCD, for
 NZXT Kraken coolers on Windows.
 
 One ~1 MB executable. No Python, no .NET, nothing to install alongside it.
-Updating once a second, it sits at about 30 MB and roughly 1% of one CPU core,
-or a sixth of that with `save_png` turned off.
+
+Updating once a second it uses about **20 MB of memory** and averages
+**around 0.1% CPU**, measured on an Intel i5-12600KF.
 
 ## Install
 
@@ -100,9 +101,9 @@ at it without changing your config.
 
 Two more worth knowing:
 
-- **`save_png = false`** makes it about seven times cheaper on CPU. PNG
-  encoding costs more than everything else put together, so turn it off once
-  your style is settled.
+- **`save_png = false`** cuts the CPU cost noticeably. Encoding the PNG is the
+  most expensive thing the service does, so turn it off once your style is
+  settled and you no longer need to preview frames.
 - **`[fan] enabled = false`** switches fan control off entirely. `silent` and
   `perf` then refuse to run and nothing touches the speed channels. The
   display is unaffected. Likewise `[display] lcd = false` runs it as a
